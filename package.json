@@ -1,5 +1,5 @@
 {
-  "name": "visualaiv5",
+  "name": "visualai-v5",
   "scripts": {
     "build": "cd frontend && npm install && npm run build"
   },
