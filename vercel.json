@@ -3,10 +3,7 @@
   "builds": [
     {
       "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "frontend/dist"
-      }
+      "use": "@vercel/static-build"
     },
     {
       "src": "api/**/*.ts",
@@ -22,5 +19,11 @@
       "src": "/(.*)",
       "dest": "/frontend/dist/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "outputDirectory": "frontend/dist"
 }
