@@ -19,6 +19,23 @@ const toBullets = (text: string) =>
     .map((s) => s.trim())
     .map((s, i) => <li key={i}>{s}</li>);
 
+// Optional: DRY helper function for safe API calls
+const fetchJsonSafely = async (url: string, payload: any) => {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const contentType = res.headers.get('content-type');
+  if (!contentType || !contentType.includes('application/json')) {
+    const text = await res.text();
+    throw new Error(`Unexpected response: ${text}`);
+  }
+
+  return await res.json();
+};
+
 export default function App() {
   const [prompt, setPrompt] = useState('');
   const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([]);
@@ -54,12 +71,7 @@ export default function App() {
     if (!prompt.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/nlp-parser', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
-      });
-      const data = await res.json();
+      const data = await fetchJsonSafely('/api/nlp-parser', { prompt });
       setControls(data.controls);
       setSelections(
         data.controls.map((c: Control) => ({
@@ -81,12 +93,7 @@ export default function App() {
   const composePrompt = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/generate-final', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, selections })
-      });
-      const data = await res.json();
+      const data = await fetchJsonSafely('/api/generate-final', { prompt, selections });
       setFinalPrompt(data.finalPrompt);
     } catch (err: any) {
       alert(err.message);
@@ -138,7 +145,6 @@ export default function App() {
         {loading ? 'Thinking…' : 'Generate Sliders'}
       </button>
 
-      {/* Grid layout split */}
       <div className="controls-grid">
         <div className="sliders">
           {controls
