@@ -1,7 +1,7 @@
 {
   "name": "visualai-v5",
   "scripts": {
-    "build": "npm install --prefix frontend && npm run build --prefix frontend"
+    "build": "cd frontend && npm install && npm run build"
   },
   "devDependencies": {
     "@vercel/node": "^1.14.0"
