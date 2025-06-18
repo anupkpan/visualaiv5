@@ -1,13 +1,10 @@
 {
   "name": "visualaiv5",
-  "version": "1.0.0",
-  "private": true,
   "scripts": {
     "build": "cd frontend && npm install && npm run build"
   },
   "devDependencies": {
-    "@vercel/node": "^1.14.0",
-    "@types/node": "^20.11.28"
+    "@vercel/node": "^1.14.0"
   },
   "dependencies": {
     "openai": "^4.19.0"
