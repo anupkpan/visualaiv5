@@ -1,19 +1,17 @@
-// api/nlp-parser.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { VercelRequest, VercelResponse } from '@vercel/node';
 
-export default async function handler(req: NextRequest) {
-  const body = await req.json();
-  const prompt = body.prompt;
-
-  if (!prompt) {
-    return new NextResponse(JSON.stringify({ error: 'Missing prompt' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method Not Allowed' });
+    return;
   }
 
-  return new NextResponse(JSON.stringify({ message: `Prompt received: ${prompt}` }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const { prompt } = req.body;
+
+  if (!prompt) {
+    res.status(400).json({ error: 'Missing prompt' });
+    return;
+  }
+
+  res.status(200).json({ message: `Prompt received: ${prompt}` });
 }
