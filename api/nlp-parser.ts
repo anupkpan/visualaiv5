@@ -1,41 +1,81 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
-import { OpenAI } from 'openai';
+const axios = require('axios');
 
-const SYS = `Return STRICT JSON format:
-{
-  "controls": [
-    { "label": "...", "type": "slider", "min": 0, "max": 100, "step": 1, "default": 50, "unit": "%" },
-    { "label": "...", "type": "options", "options": ["A", "B", "C"], "default": "B" }
-  ]
-}
-Only return valid JSON. No markdown, no text. Max 6 controls.`;
+module.exports = async (req, res) => {
+  const { question } = req.body;
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+  if (!question) {
+    return res.status(400).json({ error: 'Missing "question" in request body' });
   }
 
-  const { prompt } = req.body;
-
-  if (!prompt) {
-    return res.status(400).json({ error: 'Missing prompt' });
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({ error: 'OpenAI API key not set' });
   }
-
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
   try {
-    const result = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [
-        { role: 'system', content: SYS },
-        { role: 'user', content: prompt },
-      ],
-    });
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-3.5-turbo',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an AI parameter extractor.
+Only output a valid JSON array of sliders, nothing else.
+Each slider must have:
+- label (string)
+- min (0)
+- max (100)
+- default (0-100)
+If unsure, always return at least 3 sliders.
 
-    const parsed = result.choices[0].message?.content ?? '{}';
-    res.status(200).send(parsed);
-  } catch (error: any) {
-    console.error('API ERROR:', error);
-    res.status(500).json({ error: 'Failed to process request' });
+Example:
+[
+  {"label":"Tone","min":0,"max":100,"default":50},
+  {"label":"Length","min":0,"max":100,"default":50},
+  {"label":"Formality","min":0,"max":100,"default":50}
+]`
+          },
+          {
+            role: 'user',
+            content: question
+          }
+        ],
+        temperature: 0.4
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    let text = response.data.choices[0].message.content;
+
+    // Cleanup GPT formatting
+    text = text.replace(/```json|```/g, '').trim();
+
+    let parsedSliders = [];
+    const match = text.match(/\[[\s\S]*\]/);
+    if (match) {
+      try {
+        parsedSliders = JSON.parse(match[0]);
+      } catch (e) {
+        console.warn("Failed to parse JSON:", e);
+      }
+    }
+
+    if (!Array.isArray(parsedSliders) || parsedSliders.length === 0) {
+      parsedSliders = [
+        { label: "Tone", min: 0, max: 100, default: 50 },
+        { label: "Length", min: 0, max: 100, default: 50 },
+        { label: "Formality", min: 0, max: 100, default: 50 }
+      ];
+    }
+
+    res.status(200).json({ sliders: parsedSliders });
+  } catch (err) {
+    console.error("API ERROR:", err.message);
+    res.status(500).json({ error: 'Failed to generate sliders', detail: err.message });
   }
-}
+};
