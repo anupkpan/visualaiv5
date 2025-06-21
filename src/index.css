@@ -1,242 +1,92 @@
+/* ---------- Theme Variables ---------- */
 body.dark-theme {
-  --bg: #121212;
-  --text: #fff;
-  --muted: #aaa;
-  --btn: #4f46e5;
-  --btn-hover: #6366f1;
-  --input: #1e1e1e;
+  --bg:#121212;  --text:#fff;  --muted:#aaa;
+  --btn:#4f46e5; --btn-hover:#6366f1; --input:#1e1e1e;
+}
+body.light-theme{
+  --bg:#f9f9f9;  --text:#111; --muted:#666;
+  --btn:#000;    --btn-hover:#333;    --input:#fff;
 }
 
-body.light-theme {
-  --bg: #f9f9f9;
-  --text: #111;
-  --muted: #666;
-  --btn: #000;
-  --btn-hover: #333;
-  --input: #fff;
+/* ---------- Base ---------- */
+*{box-sizing:border-box}
+body{
+  margin:0; font-family:'Segoe UI',sans-serif;
+  background:var(--bg); color:var(--text);
+  transition:background .3s,color .3s;
 }
 
-* {
-  box-sizing: border-box;
+/* ---------- Layout / Card ---------- */
+.card{max-width:760px;margin:60px auto;padding:32px}
+
+/* ---------- Logo / Heading ---------- */
+.branding{display:flex;flex-direction:column;align-items:center;gap:12px;margin-bottom:28px}
+.logo{height:40px;object-fit:contain}
+h1{font-size:2rem;margin:0}
+.tagline{font-size:1rem;color:var(--muted);margin:0}
+
+/* ---------- Theme Toggle ---------- */
+.theme-toggle{
+  position:fixed;top:20px;right:28px;
+  font-size:1.4rem;background:none;border:none;color:var(--text);cursor:pointer;
 }
 
-body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  font-family: 'Segoe UI', sans-serif;
-  color: var(--text);
-  transition: background 0.3s ease, color 0.3s ease;
+/* ---------- Textarea ---------- */
+textarea{
+  width:100%;min-height:110px;font-size:1rem;
+  background:var(--input);color:var(--text);
+  border:1px solid var(--muted);border-radius:8px;padding:12px;margin-bottom:16px;
 }
 
-/* Layout */
-.card {
-  max-width: 720px;
-  margin: 60px auto;
-  padding: 32px;
+/* ---------- Buttons (primary) ---------- */
+button{
+  font-size:1rem;padding:10px 22px;border:none;border-radius:8px;
+  background:var(--btn);color:#fff;cursor:pointer;transition:.2s;
+}
+button:hover{background:var(--btn-hover)}
+button:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---------- Copy Button (secondary) ---------- */
+.copy-btn{margin-top:12px;font-size:.9rem;background:#888}
+.copy-btn:hover{background:#555}
+
+/* ---------- Suggestions ---------- */
+.suggestions{background:var(--input);border:1px solid var(--muted);border-radius:6px;
+  max-height:160px;overflow-y:auto;margin-top:-12px;color:var(--text)}
+.suggestions div{padding:6px 10px;cursor:pointer}
+.suggestions div:hover{background:rgba(100,100,100,.15)}
+
+/* ---------- Controls Grid ---------- */
+.controls-grid{
+  display:grid;gap:32px;margin-top:32px;
+  grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+}
+.control-row{margin-bottom:18px}
+.control-row label{font-weight:600;display:block;margin-bottom:6px}
+.control-row span{font-size:.95rem;color:var(--muted)}
+input[type=range]{width:100%}
+
+/* Option Buttons */
+.option-buttons{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.option-buttons button{
+  background:none;border:1px solid var(--muted);
+  color:var(--text);padding:6px 14px;border-radius:6px
+}
+.option-buttons button.active,
+.option-buttons button:hover{
+  background:var(--btn);border-color:var(--btn);color:#fff
 }
 
-/* Logo and Branding */
-.branding {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 28px;
-}
+/* ---------- Final Preview ---------- */
+.preview{background:var(--input);padding:20px;border-radius:10px;margin-top:36px}
+.preview ul{padding-left:22px;line-height:1.6}
 
-.logo {
-  height: 40px;
-  max-width: 180px;
-  object-fit: contain;
-}
+/* ---------- Feedback (👍👎) ---------- */
+.feedback{margin-top:16px;display:flex;gap:16px;font-size:1.4rem}
+.feedback button{background:none;border:none;color:var(--muted);cursor:pointer}
+.feedback button:hover{color:var(--text)}
 
-h1 {
-  font-size: 2rem;
-  margin: 0;
-}
-
-.tagline {
-  font-size: 1rem;
-  color: var(--muted);
-  margin: 0;
-}
-
-/* Toggle */
-.theme-toggle {
-  position: fixed;
-  top: 20px;
-  right: 28px;
-  font-size: 1.4rem;
-  background: transparent;
-  border: none;
-  color: var(--text);
-  cursor: pointer;
-}
-
-/* Text Input */
-textarea {
-  width: 100%;
-  min-height: 110px;
-  padding: 12px;
-  font-size: 1rem;
-  background: var(--input);
-  border: 1px solid #ccc;
-  color: var(--text);
-  border-radius: 6px;
-  margin-bottom: 16px;
-}
-
-/* Buttons */
-button {
-  padding: 10px 20px;
-  font-size: 1rem;
-  background: var(--btn);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: 0.2s ease;
-}
-
-button:hover {
-  background: var(--btn-hover);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Controls */
-.controls {
-  margin-top: 28px;
-}
-
-.control-row {
-  margin-bottom: 20px;
-}
-
-.control-row label {
-  font-weight: 600;
-  display: block;
-  margin-bottom: 6px;
-  color: var(--text);
-}
-
-input[type=range] {
-  width: 100%;
-}
-
-.control-row span {
-  font-size: 0.95rem;
-  color: var(--muted);
-}
-
-/* Option buttons */
-.option-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.option-buttons button {
-  background: transparent;
-  border: 1px solid var(--muted);
-  color: var(--text);
-  padding: 6px 12px;
-  border-radius: 6px;
-}
-
-.option-buttons button.active {
-  background: var(--btn);
-  border-color: var(--btn);
-  color: white;
-}
-
-/* Final preview */
-.preview {
-  background: var(--input);
-  padding: 16px;
-  border-radius: 8px;
-  margin-top: 32px;
-}
-
-.preview h3 {
-  margin-bottom: 10px;
-}
-
-.preview ul {
-  padding-left: 20px;
-  line-height: 1.6;
-}
-
-.copy-btn {
-  margin-top: 12px;
-  padding: 6px 12px;
-  font-size: 0.9rem;
-  background: #888;
-  border-radius: 6px;
-  border: none;
-}
-
-.copy-btn:hover {
-  background: #555;
-}
-
-/* Suggestions */
-.suggestions {
-  margin-top: -12px;
-  background: var(--input);
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 0.95rem;
-  padding: 6px 12px;
-  max-height: 160px;
-  overflow-y: auto;
-  color: var(--text);
-}
-.suggestions div {
-  padding: 6px 4px;
-  cursor: pointer;
-}
-.suggestions div:hover {
-  background: rgba(100, 100, 100, 0.1);
-}
-
-/* Feedback */
-.feedback {
-  margin-top: 16px;
-  display: flex;
-  gap: 12px;
-  font-size: 1.3rem;
-}
-.feedback button {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--muted);
-}
-.feedback button:hover {
-  color: var(--text);
-}
-.controls-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 32px;
-  margin-top: 32px;
-}
-
-.sliders,
-.options {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-@media (max-width: 768px) {
-  .controls-grid {
-    grid-template-columns: 1fr;
-  }
+/* ---------- Responsive ---------- */
+@media(max-width:640px){
+  .controls-grid{grid-template-columns:1fr}
 }

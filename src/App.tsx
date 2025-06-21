@@ -1,151 +1,192 @@
 import React, { useState, useEffect } from 'react';
 
+/* ---------- types ---------- */
 type Slider = {
-  label: string; type: 'slider'; min: number; max: number;
-  step?: number; default?: number; unit?: string;
+  label: string;
+  type: 'slider';
+  min: number;
+  max: number;
+  step?: number;
+  default?: number;
+  unit?: string;
 };
+
 type Options = {
-  label: string; type: 'options'; options: string[]; default?: number;
+  label: string;
+  type: 'options';
+  options: string[];
+  default?: string;
 };
+
 type Control = Slider | Options;
 
-const suggestions = [
+/* ---------- helpers ---------- */
+const promptSuggestions = [
   'how to cook chicken biryani',
-  'design a sci-fi city',
-  'draw a cozy reading nook',
-  'generate an avatar from description',
-  'plan a surprise birthday party'
+  'design a sci-fi city skyline',
+  'generate avatar from description',
+  'write a bedtime story',
+  'explain quantum computing'
 ];
 
-// Convert paragraphs → list items, keep numbering tidy
-const toBullets = (txt: string) =>
+const fetchJsonSafe = async (url: string, body: any) => {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const type = r.headers.get('content-type') || '';
+  if (!type.includes('application/json')) throw new Error(await r.text());
+  return r.json();
+};
+
+const bullets = (txt: string) =>
   txt
-    .replace(/(\r?\n)+/g, ' ')           // single line
-    .replace(/(\d+)\.\s+/g, '\n$1\t')    // “1. ” → newline + tab
-    .split('\n')
-    .map(s => s.trim())
+    .split(/\r?\n/)
     .filter(Boolean)
-    .map((s, i) => <li key={i}>{s}</li>);
+    .map((s, i) => <li key={i}>{s.replace(/^\d+\.\s*/, '')}</li>);
 
+/* ---------- component ---------- */
 export default function App() {
-  const [prompt, setPrompt] = useState('');
-  const [controls, setControls] = useState<Control[]>([]);
-  const [sel, setSel] = useState<{ label: string; value: string | number }[]>([]);
-  const [output, setOutput] = useState('');
-  const [err, setErr] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>(
-    () => (localStorage.getItem('vap-theme') as 'dark' | 'light') || 'light'
+  /* state */
+  const [prompt,        setPrompt]        = useState('');
+  const [suggestions,   setSuggestions]   = useState<string[]>([]);
+  const [controls,      setControls]      = useState<Control[]>([]);
+  const [values,        setValues]        = useState<(string|number)[]>([]);
+  const [finalOutput,   setFinalOutput]   = useState('');
+  const [loading,       setLoading]       = useState(false);
+  const [dark,          setDark]          = useState(
+    localStorage.getItem('vap-theme') === 'dark'
   );
-  const [filtered, setFiltered] = useState<string[]>([]);
 
-  /* ---------- theme ---------- */
+  /* side-effects */
   useEffect(() => {
-    document.body.className = theme === 'dark' ? 'dark-theme' : 'light-theme';
-    localStorage.setItem('vap-theme', theme);
-  }, [theme]);
+    document.body.classList.toggle('dark', dark);
+    localStorage.setItem('vap-theme', dark ? 'dark' : 'light');
+  }, [dark]);
 
-  /* ---------- prompt input ---------- */
-  const onPrompt = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  /* event handlers */
+  const handlePrompt = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const v = e.target.value;
     setPrompt(v);
-    setFiltered(v.length > 2 ? suggestions.filter(s => s.toLowerCase().includes(v.toLowerCase())) : []);
+    setSuggestions(
+      v.length > 2 ? promptSuggestions.filter(s => s.includes(v)) : []
+    );
   };
 
-  /* ---------- fetch controls ---------- */
-  const getControls = async () => {
+  const generateControls = async () => {
     if (!prompt.trim()) return;
-    setErr(''); setOutput(''); setLoading(true);
+    setLoading(true);
     try {
-      const r = await fetch('/api/nlp-parser', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
-      });
-      const j = await r.json();
-      if (!j.controls?.length) throw new Error('No controls returned');
-      setControls(j.controls);
-      setSel(j.controls.map((c: any) => ({
+      const { controls } = await fetchJsonSafe('/api/nlp-parser', { question: prompt });
+      setControls(controls);
+      /* init values */
+      setValues(
+        controls.map(c =>
+          c.type === 'slider'
+            ? (c as Slider).default ?? (c as Slider).min
+            : (c as Options).options[(c as Options).default ?? 0]
+        )
+      );
+      setFinalOutput('');
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateOutput = async () => {
+    setLoading(true);
+    try {
+      const selections = controls.map((c, i) => ({
         label: c.label,
-        value: c.type === 'options' ? c.options[c.default ?? 0] : c.default ?? c.min
-      })));
-    } catch (e: any) {
-      setErr(e.message);
-    } finally { setLoading(false); }
-  };
-
-  /* ---------- generate output ---------- */
-  const genOutput = async () => {
-    setErr(''); setOutput(''); setLoading(true);
-    try {
-      const r = await fetch('/api/generate-final', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, selections: sel })
+        value: values[i]
+      }));
+      const { output } = await fetchJsonSafe('/api/generate-final', {
+        prompt,
+        selections
       });
-      const j = await r.json();
-      if (!j.output) throw new Error('Empty response');
-      setOutput(j.output);
+      setFinalOutput(output);
     } catch (e: any) {
-      setErr(e.message);
-    } finally { setLoading(false); }
+      alert(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  /* UI */
   return (
-    <div className="card">
-      {/* theme toggle */}
-      <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
-        {theme === 'dark' ? '🌞' : '🌙'}
-      </button>
+    <main className="wrapper">
+      {/* dark-mode toggle + logo */}
+      <header>
+        <img src={dark ? '/logo-dark.png' : '/logo-light.png'} alt="logo" />
+        <button onClick={() => setDark(!dark)}>{dark ? '🌞' : '🌙'}</button>
+      </header>
 
-      {/* logo + heading */}
-      <div className="branding">
-        <picture>
-          <source srcSet="/logo-light.png" media="(prefers-color-scheme: dark)" />
-          <img src="/logo-dark.png" className="logo" alt="logo" />
-        </picture>
-        <h1>Visual AI Pro V5</h1>
-        <p>Bringing AI to Life Visually</p>
-      </div>
+      <h1>Visual AI Pro V5</h1>
+      <p className="tag">Bringing AI to Life Visually</p>
 
       {/* prompt box */}
-      <textarea value={prompt} onChange={onPrompt} placeholder="Enter your prompt…" />
-      {filtered.length > 0 && (
+      <textarea
+        placeholder="Enter your prompt…"
+        value={prompt}
+        onChange={handlePrompt}
+      />
+
+      {/* auto-suggestion dropdown */}
+      {suggestions.length > 0 && (
         <div className="suggestions">
-          {filtered.map(s => (
-            <div key={s} onClick={() => { setPrompt(s); setFiltered([]); }}>{s}</div>
+          {suggestions.map(s => (
+            <div
+              key={s}
+              onClick={() => { setPrompt(s); setSuggestions([]); }}
+            >
+              {s}
+            </div>
           ))}
         </div>
       )}
 
-      {/* generate sliders btn */}
-      <button onClick={getControls} disabled={loading}>{loading ? 'Thinking…' : 'Generate Sliders'}</button>
+      <button onClick={generateControls} disabled={loading}>
+        {loading ? 'Thinking…' : 'Generate Sliders'}
+      </button>
 
-      {/* sliders & option buttons */}
+      {/* controls grid */}
       {controls.length > 0 && (
-        <div className="controls-grid">
-          {/* sliders */}
+        <section className="grid">
           {controls.map((c, i) =>
             c.type === 'slider' ? (
-              <div className="control-row" key={c.label}>
+              <div key={i} className="ctrl">
                 <label>{c.label}</label>
                 <input
-                  type="range" min={c.min} max={c.max} step={c.step ?? 1}
-                  value={sel[i]?.value as number}
+                  type="range"
+                  min={c.min}
+                  max={c.max}
+                  step={c.step || 1}
+                  value={values[i] as number}
                   onChange={e =>
-                    setSel(p => p.map((s, j) => j === i ? { ...s, value: Number(e.target.value) } : s))
+                    setValues(v =>
+                      v.map((val, idx) =>
+                        idx === i ? Number(e.target.value) : val
+                      )
+                    )
                   }
                 />
-                <span>{sel[i]?.value}{c.unit ?? ''}</span>
+                <small>{values[i]} {c.unit ?? ''}</small>
               </div>
             ) : (
-              <div className="control-row" key={c.label}>
+              <div key={i} className="ctrl">
                 <label>{c.label}</label>
-                <div className="option-buttons">
+                <div className="opts">
                   {c.options.map(opt => (
                     <button
                       key={opt}
-                      className={sel[i]?.value === opt ? 'active' : ''}
+                      className={opt === values[i] ? 'sel' : ''}
                       onClick={() =>
-                        setSel(p => p.map((s, j) => j === i ? { ...s, value: opt } : s))
+                        setValues(v => v.map((val, idx) =>
+                          idx === i ? opt : val
+                        ))
                       }
                     >
                       {opt}
@@ -155,20 +196,34 @@ export default function App() {
               </div>
             )
           )}
-          <button onClick={genOutput} disabled={loading}>
-            {loading ? 'Composing…' : 'Generate Final Prompt'}
-          </button>
-        </div>
+        </section>
       )}
 
-      {err && <div className="error">{err}</div>}
-
-      {output && (
-        <div className="preview">
-          <h3>Final Output</h3>
-          <ul>{toBullets(output)}</ul>
-        </div>
+      {controls.length > 0 && (
+        <button onClick={generateOutput} disabled={loading} className="full">
+          {loading ? 'Composing…' : 'Generate Final Prompt'}
+        </button>
       )}
-    </div>
+
+      {/* output */}
+      {finalOutput && (
+        <section className="output">
+          <h3>Final Output ✨</h3>
+          <ul>{bullets(finalOutput)}</ul>
+
+          <div className="out-actions">
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(finalOutput);
+                alert('Copied!');
+              }}
+            >
+              📋 Copy
+            </button>
+            <span style={{ fontSize: 24 }}>👍 👎</span>
+          </div>
+        </section>
+      )}
+    </main>
   );
 }
