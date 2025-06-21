@@ -1,34 +1,27 @@
-import { NextApiRequest, NextApiResponse } from 'next';
+import { Request, Response } from 'express';
 import { OpenAI } from 'openai';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { prompt, selections } = req.body;
-  if (!prompt) return res.status(400).json({ error: 'Prompt required' });
+export default async function handler(req: Request, res: Response) {
+  const { prompt, controls } = req.body;
+  if (!prompt || !controls) return res.status(400).json({ error: 'Missing prompt or controls' });
 
-  const modLines = (selections || [])
-    .map((s: any) => `- ${s.label}: ${s.value}`)
-    .join('\n');
-
-  const fullPrompt = `${prompt}\n\nContext:\n${modLines}`;
+  const controlText = Object.entries(controls)
+    .map(([key, val]) => `${key}: ${val}`)
+    .join(', ');
 
   try {
-    const chat = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      temperature: 0.7,
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4',
       messages: [
-        { role: 'system', content: 'Provide a helpful, step-by-step answer. Plain text only.' },
-        { role: 'user', content: fullPrompt }
+        { role: 'system', content: 'You are a helpful assistant that crafts rich and accurate responses based on structured inputs.' },
+        { role: 'user', content: `Prompt: ${prompt}\nSettings: ${controlText}` }
       ]
     });
-
-    let output = chat.choices[0].message.content?.trim() ?? '';
-    output = output.replace(/```[a-z]*\n?|\n?```/g, '').trim();
-
-    res.status(200).json({ output });
-  } catch (err: any) {
-    console.error('FINAL ERR', err);
-    res.status(500).json({ error: 'Failed to generate', detail: err.message });
+    const result = completion.choices[0].message.content;
+    res.status(200).json({ result });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate final output' });
   }
 }
