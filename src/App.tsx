@@ -1,157 +1,153 @@
-// src/App.tsx
 import React, { useState } from 'react';
 import './index.css';
 
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [controls, setControls] = useState<any[]>([]);
-  const [values, setValues] = useState<{ [key: string]: any }>({});
+  const [controlValues, setControlValues] = useState<{ [key: string]: any }>({});
   const [result, setResult] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [error, setError] = useState('');
+  const [darkMode, setDarkMode] = useState(false);
 
-  const handleThemeToggle = () => {
-    const newTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(newTheme);
-    document.body.className = `${newTheme}-theme`;
+  const handleToggleTheme = () => {
+    setDarkMode(!darkMode);
+    document.documentElement.classList.toggle('dark', !darkMode);
   };
 
-  const fetchControls = async () => {
-    const res = await fetch('/api/nlp-parser', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
-    });
-    const data = await res.json();
-    if (data?.controls) {
-      setControls(data.controls);
-      const initialValues: { [key: string]: any } = {};
-      data.controls.forEach((c: any) => {
-        initialValues[c.label] = c.default;
+  const handleGenerateSliders = async () => {
+    if (!prompt) {
+      alert('Please enter a prompt');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/nlp-parser', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
       });
-      setValues(initialValues);
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Failed to generate sliders');
+
+      setControls(data.controls);
+      setControlValues(
+        data.controls.reduce((acc: any, c: any) => {
+          acc[c.label] = c.default;
+          return acc;
+        }, {})
+      );
+      setResult('');
+      setError('');
+    } catch (err) {
+      console.error(err);
+      setError('Could not generate sliders');
     }
   };
 
-  const generateFinal = async () => {
-    const res = await fetch('/api/generate-final', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, controls: values }),
-    });
-    const data = await res.json();
-    setResult(data.result);
-  };
+  const handleGenerateFinal = async () => {
+    try {
+      const res = await fetch('/api/generate-final', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, controls: controlValues }),
+      });
 
-  const handleChange = (label: string, value: any) => {
-    setValues((prev) => ({ ...prev, [label]: value }));
-  };
+      const data = await res.json();
 
-  const handleSuggestionClick = (s: string) => {
-    setPrompt(s);
-    setSuggestions([]);
-  };
+      if (!res.ok) throw new Error(data.error || 'Failed to generate result');
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(result);
-  };
-
-  const feedback = (val: 'up' | 'down') => {
-    console.log('Feedback:', val);
+      setResult(data.result);
+      setError('');
+    } catch (err) {
+      console.error(err);
+      setError('Could not generate final output');
+    }
   };
 
   return (
-    <div className="card">
-      <button className="theme-toggle" onClick={handleThemeToggle}>
-        {theme === 'dark' ? '🌞' : '🌙'}
-      </button>
-
-      <div className="branding">
-        <img
-          className="logo"
-          src={theme === 'dark' ? '/logo-dark.png' : '/logo-light.png'}
-          alt="logo"
-        />
-        <h1>Visual AI Pro V5</h1>
-        <p className="tagline">Bringing AI to Life Visually</p>
+    <div className="app">
+      <div className="theme-toggle" onClick={handleToggleTheme}>
+        {darkMode ? '🌞' : '🌙'}
       </div>
 
+      <div className="logo-container">
+        <img
+          src={darkMode ? '/logo-light.png' : '/logo-dark.png'}
+          alt="Logo"
+          className="logo"
+        />
+      </div>
+
+      <h1>Visual AI Pro V5</h1>
+      <p>Bringing AI to Life Visually</p>
+
       <textarea
+        className="prompt-box"
+        placeholder="Enter your prompt…"
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
-        placeholder="Enter your prompt..."
       />
-      <button onClick={fetchControls}>Generate Sliders</button>
 
-      {suggestions.length > 0 && (
-        <div className="suggestions">
-          {suggestions.map((s, i) => (
-            <div key={i} onClick={() => handleSuggestionClick(s)}>
-              {s}
-            </div>
-          ))}
+      <button className="generate-btn" onClick={handleGenerateSliders}>
+        Generate Sliders
+      </button>
+
+      {controls.length > 0 && (
+        <div className="controls-grid">
+          {controls.map((control, index) => {
+            if (control.type === 'slider') {
+              return (
+                <div key={index} className="control">
+                  <label>{control.label}: {controlValues[control.label]}</label>
+                  <input
+                    type="range"
+                    min={control.min}
+                    max={control.max}
+                    step={control.step}
+                    value={controlValues[control.label]}
+                    onChange={(e) =>
+                      setControlValues({ ...controlValues, [control.label]: Number(e.target.value) })
+                    }
+                  />
+                </div>
+              );
+            } else if (control.type === 'options') {
+              return (
+                <div key={index} className="control">
+                  <label>{control.label}</label>
+                  <select
+                    value={controlValues[control.label]}
+                    onChange={(e) =>
+                      setControlValues({ ...controlValues, [control.label]: e.target.value })
+                    }
+                  >
+                    {control.options.map((opt: string) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+            return null;
+          })}
         </div>
       )}
 
-      <div className="controls-grid">
-        <div className="sliders">
-          {controls
-            .filter((c) => c.type === 'slider')
-            .map((c) => (
-              <div className="control-row" key={c.label}>
-                <label>{c.label}</label>
-                <input
-                  type="range"
-                  min={c.min}
-                  max={c.max}
-                  step={c.step}
-                  value={values[c.label]}
-                  onChange={(e) => handleChange(c.label, parseInt(e.target.value))}
-                />
-                <span>{values[c.label] + (c.unit || '')}</span>
-              </div>
-            ))}
-        </div>
-
-        <div className="options">
-          {controls
-            .filter((c) => c.type === 'options')
-            .map((c) => (
-              <div className="control-row" key={c.label}>
-                <label>{c.label}</label>
-                <div className="option-buttons">
-                  {c.options.map((opt: string) => (
-                    <button
-                      key={opt}
-                      className={values[c.label] === opt ? 'active' : ''}
-                      onClick={() => handleChange(c.label, opt)}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-        </div>
-      </div>
-
       {controls.length > 0 && (
-        <button style={{ marginTop: '24px' }} onClick={generateFinal}>
+        <button className="generate-btn" onClick={handleGenerateFinal}>
           Generate Final Prompt
         </button>
       )}
 
+      {error && <p className="error">{error}</p>}
+
       {result && (
-        <div className="preview">
-          <h3>AI Output</h3>
-          <p>{result}</p>
-          <button className="copy-btn" onClick={copyToClipboard}>
-            Copy to Clipboard
-          </button>
-          <div className="feedback">
-            <button onClick={() => feedback('up')}>👍</button>
-            <button onClick={() => feedback('down')}>👎</button>
-          </div>
+        <div className="result-box">
+          <pre>{result}</pre>
         </div>
       )}
     </div>
