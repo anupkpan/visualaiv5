@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './index.css';
 
-/* ---------- type helpers ---------- */
 type Slider = {
   label: string;
   type: 'slider';
@@ -11,204 +10,284 @@ type Slider = {
   default?: number;
   unit?: string;
 };
+
 type Options = {
   label: string;
   type: 'options';
   options: string[];
   default?: number;
 };
+
 type Control = Slider | Options;
 
-/* ---------- demo autocomplete ---------- */
-const promptHints = [
+const suggestionsSeed = [
   'how to cook chicken biryani',
+  'how to play football',
   'design a sci-fi city',
-  'create a fantasy forest wallpaper',
-  'draw a cozy reading nook',
-  'generate an avatar from description'
+  'generate an avatar from description',
+  'draw a cozy reading nook'
 ];
 
-/* ---------- small helper ---------- */
-async function postJson<T>(url: string, body: unknown): Promise<T> {
+/* ---------- HELPERS ---------- */
+async function postJSON<T = any>(
+  url: string,
+  payload: Record<string, unknown>
+): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify(payload)
   });
 
-  if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
-    const msg = await res.text();
-    throw new Error(msg || `HTTP ${res.status}`);
+  const type = res.headers.get('content-type') || '';
+  if (!type.includes('application/json')) {
+    throw new Error(await res.text());
   }
   return res.json();
 }
 
-/* ---------- main component ---------- */
+const bullets = (txt: string) =>
+  txt
+    .replace(/\r\n|\r/g, '\n') // normalise
+    .split(/\n+/)
+    .filter(Boolean)
+    .map(line => line.trim().replace(/^[\d\-•\*]+\s*/, '')) // strip existing markers
+    .map((line, i) => <li key={i}>{line}</li>);
+
 export default function App() {
-  /* ui state */
+  /* ---- state ---- */
   const [prompt, setPrompt] = useState('');
+  const [autos, setAutos] = useState<string[]>([]);
   const [controls, setControls] = useState<Control[]>([]);
-  const [choices, setChoices] = useState<{ label: string; value: string | number }[]>([]);
-  const [preview, setPreview] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>(
-    () => (localStorage.getItem('vap-theme') as 'dark' | 'light') || 'dark'
+  const [vals, setVals] = useState<{ label: string; value: number | string }[]>(
+    []
+  );
+  const [final, setFinal] = useState('');
+  const [loading, setLoading] = useState<'none' | 'ctrls' | 'final'>('none');
+  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
+    (localStorage.getItem('vap-theme') as 'dark' | 'light') || 'dark'
   );
 
-  /* document side-effects */
-  useEffect(() => {
-    document.title = 'Visual AI Pro V5 — Bringing AI to Life Visually';
-  }, []);
+  const promptBox = useRef<HTMLTextAreaElement>(null);
+  const suggWrap = useRef<HTMLDivElement>(null);
+
+  /* ---- theme apply ---- */
   useEffect(() => {
     document.body.classList.toggle('dark-theme', theme === 'dark');
     document.body.classList.toggle('light-theme', theme === 'light');
     localStorage.setItem('vap-theme', theme);
   }, [theme]);
 
-  /* ---------- actions ---------- */
-  async function generateSliders() {
+  /* ---- autosuggest dismiss on outside click ---- */
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (
+        suggWrap.current &&
+        !suggWrap.current.contains(e.target as Node) &&
+        !promptBox.current?.contains(e.target as Node)
+      )
+        setAutos([]);
+    };
+    document.addEventListener('mousedown', fn);
+    return () => document.removeEventListener('mousedown', fn);
+  }, []);
+
+  /* ---- handlers ---- */
+  const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setPrompt(val);
+
+    // naive suggest
+    if (val.length >= 3) {
+      const low = val.toLowerCase();
+      setAutos(suggestionsSeed.filter(s => s.includes(low)));
+    } else setAutos([]);
+  };
+
+  const genControls = async () => {
     if (!prompt.trim()) return;
-    setLoading(true);
+    setLoading('ctrls');
     try {
-      const data = await postJson<{ controls: Control[] }>('/api/nlp-parser', { prompt });
-      if (!Array.isArray(data.controls)) throw new Error('Invalid slider payload');
-
-      setControls(data.controls);
-
-      /* default choice values */
-      setChoices(
-        data.controls.map((c) =>
-          c.type === 'options'
-            ? { label: c.label, value: c.options[c.default ?? 0] }
-            : { label: c.label, value: c.default ?? c.min }
-        )
+      const { controls: ctrls } = await postJSON<{ controls: Control[] }>(
+        '/api/nlp-parser',
+        { prompt }
       );
-      setPreview('');
-    } catch (err: any) {
-      alert(`Could not generate sliders\n\n${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  async function generateFinalPrompt() {
-    setLoading(true);
+      setControls(ctrls);
+      setVals(
+        ctrls.map(c => ({
+          label: c.label,
+          value:
+            c.type === 'slider'
+              ? (c as Slider).default ?? (c as Slider).min
+              : (c as Options).options[(c as Options).default ?? 0]
+        }))
+      );
+      setFinal('');
+    } catch (err: any) {
+      alert(`Could not generate sliders\n${err.message}`);
+    } finally {
+      setLoading('none');
+    }
+  };
+
+  const genFinal = async () => {
+    setLoading('final');
     try {
-      const data = await postJson<any>('/api/generate-final', { prompt, selections: choices });
-      setPreview(data.finalPrompt ?? data.output ?? '(no output)');
+      const json = await postJSON<any>('/api/generate-final', {
+        prompt,
+        selections: vals
+      });
+      const text = json.finalPrompt ?? json.output ?? '';
+      setFinal(text);
     } catch (err: any) {
-      alert(`Could not generate final prompt\n\n${err.message}`);
+      alert(`Failed to compose final prompt\n${err.message}`);
     } finally {
-      setLoading(false);
+      setLoading('none');
     }
-  }
+  };
 
-  /* ---------- render ---------- */
-  const suggestions = prompt.length > 2
-    ? promptHints.filter((h) => h.toLowerCase().includes(prompt.toLowerCase()))
-    : [];
-
+  /* ---- view ---- */
   return (
-    <div className="card">
-      {/* theme toggle */}
-      <button className="theme-toggle" onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}>
+    <div className="outer">
+      <button
+        className="theme-toggle"
+        onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+        title="Toggle theme"
+      >
         {theme === 'dark' ? '🌞' : '🌙'}
       </button>
 
-      {/* logo / heading */}
       <div className="branding">
-        <img className="logo" src={theme === 'dark' ? '/logo-light.png' : '/logo-dark.png'} />
+        <img
+          src={theme === 'dark' ? '/logo-dark.png' : '/logo-light.png'}
+          alt="Logo"
+          className="logo"
+        />
         <h1>Visual AI Pro V5</h1>
         <p className="tagline">Bringing AI to Life Visually</p>
       </div>
 
-      {/* prompt input */}
-      <textarea
-        placeholder="Enter your prompt…"
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-      />
-      {!!suggestions.length && (
-        <div className="suggestions">
-          {suggestions.map((s) => (
-            <div key={s} onClick={() => { setPrompt(s); }}>
-              {s}
-            </div>
-          ))}
-        </div>
-      )}
+      {/* prompt */}
+      <div className="prompt-wrap" ref={suggWrap}>
+        <textarea
+          ref={promptBox}
+          placeholder="Enter your prompt…"
+          value={prompt}
+          onChange={onPromptChange}
+        />
+        {autos.length > 0 && (
+          <div className="suggestions">
+            {autos.map(s => (
+              <div
+                key={s}
+                onClick={() => {
+                  setPrompt(s);
+                  setAutos([]);
+                }}
+              >
+                {s}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-      {/* buttons */}
-      <button onClick={generateSliders} disabled={loading}>Generate Sliders</button>
+      <button disabled={loading !== 'none'} onClick={genControls}>
+        {loading === 'ctrls' ? 'Thinking…' : 'Generate Sliders'}
+      </button>
 
-      {/* controls grid */}
-      {!!controls.length && (
+      {/* sliders + options */}
+      {controls.length > 0 && (
         <div className="controls-grid">
-          {/* sliders */}
           <div className="sliders">
-            {controls.map((c, idx) => c.type === 'slider' && (
-              <div className="control-row" key={c.label}>
-                <label>{c.label}</label>
-                <input
-                  type="range"
-                  min={c.min}
-                  max={c.max}
-                  step={c.step ?? 1}
-                  value={Number(choices[idx]?.value)}
-                  onChange={e => setChoices(cs =>
-                    cs.map((v, i) => i === idx ? { ...v, value: Number(e.target.value) } : v)
-                  )}
-                />
-                <span>{choices[idx]?.value}{c.unit ?? ''}</span>
-              </div>
-            ))}
+            {controls
+              .map((c, i) => ({ c, i }))
+              .filter(x => x.c.type === 'slider')
+              .map(({ c, i }) => {
+                const s = c as Slider;
+                return (
+                  <div className="control-row" key={s.label}>
+                    <label>{s.label}</label>
+                    <input
+                      type="range"
+                      min={s.min}
+                      max={s.max}
+                      step={s.step ?? 1}
+                      value={Number(vals[i]?.value)}
+                      onChange={e =>
+                        setVals(v =>
+                          v.map((vv, idx) =>
+                            idx === i
+                              ? { ...vv, value: Number(e.target.value) }
+                              : vv
+                          )
+                        )
+                      }
+                    />
+                    <span>
+                      {vals[i]?.value} {s.unit ?? ''}
+                    </span>
+                  </div>
+                );
+              })}
           </div>
 
-          {/* option buttons */}
           <div className="options">
-            {controls.map((c, idx) => c.type === 'options' && (
-              <div className="control-row" key={c.label}>
-                <label>{c.label}</label>
-                <div className="option-buttons">
-                  {c.options.map(opt => {
-                    const active = choices[idx]?.value === opt;
-                    return (
-                      <button
-                        key={opt}
-                        className={active ? 'active' : ''}
-                        onClick={() => setChoices(cs =>
-                          cs.map((v, i) => i === idx ? { ...v, value: opt } : v)
-                        )}
-                      >
-                        {opt}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+            {controls
+              .map((c, i) => ({ c, i }))
+              .filter(x => x.c.type === 'options')
+              .map(({ c, i }) => {
+                const o = c as Options;
+                return (
+                  <div className="control-row" key={o.label}>
+                    <label>{o.label}</label>
+                    <div className="option-buttons">
+                      {o.options.map(opt => {
+                        const active = vals[i]?.value === opt;
+                        return (
+                          <button
+                            key={opt}
+                            className={active ? 'active' : ''}
+                            onClick={() =>
+                              setVals(v =>
+                                v.map((vv, idx) =>
+                                  idx === i ? { ...vv, value: opt } : vv
+                                )
+                              )
+                            }
+                          >
+                            {opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}
 
-      {!!controls.length && (
-        <button style={{ marginTop: 28 }} onClick={generateFinalPrompt} disabled={loading}>
-          {loading ? 'Composing…' : 'Generate Final Prompt'}
+      {controls.length > 0 && (
+        <button
+          style={{ marginTop: 32 }}
+          disabled={loading !== 'none'}
+          onClick={genFinal}
+        >
+          {loading === 'final' ? 'Composing…' : 'Generate Final Prompt'}
         </button>
       )}
 
-      {/* preview area */}
-      {!!preview && (
+      {final && (
         <div className="preview">
           <h3>Final Prompt</h3>
-          <ul>
-            {preview
-              .split(/(?:\n|•|\d+\.)\s*/)
-              .filter(Boolean)
-              .map((line, i) => <li key={i}>{line.trim()}</li>)}
-          </ul>
+          <ul>{bullets(final)}</ul>
 
-          <button className="copy-btn" onClick={() => navigator.clipboard.writeText(preview)}>
+          <button
+            className="copy-btn"
+            onClick={() => navigator.clipboard.writeText(final)}
+          >
             Copy
           </button>
 
