@@ -1,53 +1,53 @@
-import { NextApiRequest, NextApiResponse } from 'next';
+import { VercelRequest, VercelResponse } from '@vercel/node';
 import { OpenAI } from 'openai';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { question } = req.body;
-  if (!question) return res.status(400).json({ error: 'Missing question' });
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+
+  const { prompt } = req.body as { prompt?: string };
+  if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
 
   try {
-    const rsp = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      temperature: 0.4,
+    /* ask GPT to return at most 6 controls (sliders & option groups) */
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',              // cheaper & fast; use gpt-4 if you prefer
+      temperature: 0.3,
       messages: [
         {
           role: 'system',
-          content: `You are a UI-parameter extractor.
+          content: `Return STRICT JSON:
 
-Return ONLY a JSON object with up to six controls. 
-Example:
 {
-  "controls":[
-    {"label":"Spice Level","type":"slider","min":0,"max":10,"default":5},
-    {"label":"Style","type":"options","options":["Hyderabadi","Lucknowi"],"default":"Hyderabadi"}
+  "controls": [
+    { "label": "Spice Level", "type": "slider", "min": 0, "max": 10, "default": 5, "unit": "" },
+    { "label": "Style", "type": "options", "options": ["Hyderabadi","Lucknowi"], "default": 0 }
   ]
 }
 
 Rules:
-- 3–6 controls.
-- Use slider for numeric, options for categorical.
-- No markdown, no extra text.`
+- 3–6 controls total
+- mix of "slider" and "options"
+- No markdown, no extra keys`
         },
-        { role: 'user', content: question }
+        { role: 'user', content: prompt }
       ]
     });
 
-    const raw = rsp.choices[0].message.content ?? '{}';
-    const obj = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || '{}');
+    let json = completion.choices[0].message.content!.trim();
+    json = json.replace(/```json|```/g, '');
 
-    if (!Array.isArray(obj.controls) || obj.controls.length < 3) {
-      obj.controls = [
-        { label: 'Spice Level', type: 'slider', min: 0, max: 10, default: 5 },
-        { label: 'Style', type: 'options', options: ['Hyderabadi','Lucknowi'], default: 'Hyderabadi' },
-        { label: 'Cooking Time', type: 'slider', min: 5, max: 120, step: 5, default: 30 }
-      ];
-    }
-
-    res.status(200).json(obj);
+    const parsed = JSON.parse(json);
+    return res.status(200).json(parsed);
   } catch (err: any) {
-    console.error('NLP-PARSE ERR', err);
-    res.status(500).json({ error: 'Failed to parse', detail: err.message });
+    console.error('[nlp-parser] error', err?.message);
+    /* fallback default sliders */
+    return res.status(200).json({
+      controls: [
+        { label: 'Tone', type: 'slider', min: 0, max: 100, default: 50 },
+        { label: 'Length', type: 'slider', min: 0, max: 100, default: 50 }
+      ]
+    });
   }
 }
