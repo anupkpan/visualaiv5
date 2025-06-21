@@ -1,32 +1,36 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import { Request, Response } from 'express';
 import { OpenAI } from 'openai';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const { prompt, selections } = req.body as {
-    prompt?: string;
-    selections?: { label: string; value: string | number }[];
-  };
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+
+export default async function handler(req: Request, res: Response) {
+  const { prompt } = req.body;
 
   if (!prompt) {
-    return res.status(400).json({ error: 'Missing prompt' });
+    return res.status(400).json({ error: 'Prompt is required' });
   }
 
   try {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
-
-    const result = await openai.chat.completions.create({
-      model: 'gpt-4',
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
       messages: [
-        { role: 'system', content: 'Answer the prompt clearly and concisely.' },
-        { role: 'user', content: JSON.stringify({ prompt, selections }, null, 2) }
+        {
+          role: 'system',
+          content: `You are a helpful assistant. Respond to the prompt with plain, natural English, with no markdown or JSON.`
+        },
+        { role: 'user', content: prompt }
       ],
-      temperature: 0.8
+      temperature: 0.7
     });
 
-    const content = result.choices?.[0]?.message?.content ?? '';
-    res.status(200).json({ finalPrompt: content });
+    let output = completion.choices[0].message.content || '';
+
+    // 🧹 Clean up any code blocks if GPT ignores instructions
+    output = output.replace(/```(?:json|text)?/g, '').replace(/```/g, '').trim();
+
+    res.status(200).json({ output });
   } catch (err: any) {
-    console.error('API ERROR:', err?.message || err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("FINAL GPT ERROR:", err);
+    res.status(500).json({ error: 'Failed to generate final output', detail: err.message });
   }
 }
