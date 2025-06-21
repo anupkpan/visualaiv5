@@ -1,227 +1,172 @@
 import React, { useState, useEffect } from 'react';
 
-type Control =
-  | {
-      label: string;
-      type: 'slider';
-      min: number;
-      max: number;
-      step?: number;
-      default?: number;
-      unit?: string;
-    }
-  | {
-      label: string;
-      type: 'options';
-      options: string[];
-      default?: number;
-    };
+type Slider = {
+  label: string; type: 'slider'; min: number; max: number;
+  step?: number; default?: number; unit?: string;
+};
+type Options = {
+  label: string; type: 'options'; options: string[]; default?: number;
+};
+type Control = Slider | Options;
 
 const suggestions = [
   'how to cook chicken biryani',
-  'generate a cover letter',
-  'design a fantasy castle',
-  'draw a cyberpunk city',
+  'design a sci-fi city',
+  'draw a cozy reading nook',
+  'generate an avatar from description',
   'plan a surprise birthday party'
 ];
+
+// Convert paragraphs → list items, keep numbering tidy
+const toBullets = (txt: string) =>
+  txt
+    .replace(/(\r?\n)+/g, ' ')           // single line
+    .replace(/(\d+)\.\s+/g, '\n$1\t')    // “1. ” → newline + tab
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map((s, i) => <li key={i}>{s}</li>);
 
 export default function App() {
   const [prompt, setPrompt] = useState('');
   const [controls, setControls] = useState<Control[]>([]);
-  const [selections, setSelections] = useState<{ label: string; value: number | string }[]>([]);
-  const [finalOutput, setFinalOutput] = useState('');
-  const [error, setError] = useState('');
+  const [sel, setSel] = useState<{ label: string; value: string | number }[]>([]);
+  const [output, setOutput] = useState('');
+  const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    () => (localStorage.getItem('vap-theme') as 'dark' | 'light') || 'light'
+  );
   const [filtered, setFiltered] = useState<string[]>([]);
 
-  const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    setPrompt(value);
-    if (value.length > 2) {
-      const matches = suggestions.filter((s) => s.toLowerCase().includes(value.toLowerCase()));
-      setFiltered(matches);
-    } else {
-      setFiltered([]);
-    }
+  /* ---------- theme ---------- */
+  useEffect(() => {
+    document.body.className = theme === 'dark' ? 'dark-theme' : 'light-theme';
+    localStorage.setItem('vap-theme', theme);
+  }, [theme]);
+
+  /* ---------- prompt input ---------- */
+  const onPrompt = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const v = e.target.value;
+    setPrompt(v);
+    setFiltered(v.length > 2 ? suggestions.filter(s => s.toLowerCase().includes(v.toLowerCase())) : []);
   };
 
-  const fetchControls = async () => {
+  /* ---------- fetch controls ---------- */
+  const getControls = async () => {
     if (!prompt.trim()) return;
-    setError('');
-    setFinalOutput('');
-    setControls([]);
-    setLoading(true);
-
+    setErr(''); setOutput(''); setLoading(true);
     try {
-      const res = await fetch('/api/nlp-parser', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const r = await fetch('/api/nlp-parser', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
       });
-      const data = await res.json();
-      setControls(data.controls);
-      setSelections(
-        data.controls.map((ctrl: any) => ({
-          label: ctrl.label,
-          value: ctrl.type === 'options'
-            ? ctrl.options[ctrl.default ?? 0]
-            : ctrl.default ?? ctrl.min
-        }))
-      );
-    } catch (err: any) {
-      setError('Failed to generate sliders.');
-    } finally {
-      setLoading(false);
-    }
+      const j = await r.json();
+      if (!j.controls?.length) throw new Error('No controls returned');
+      setControls(j.controls);
+      setSel(j.controls.map((c: any) => ({
+        label: c.label,
+        value: c.type === 'options' ? c.options[c.default ?? 0] : c.default ?? c.min
+      })));
+    } catch (e: any) {
+      setErr(e.message);
+    } finally { setLoading(false); }
   };
 
-  const generateOutput = async () => {
-    setError('');
-    setFinalOutput('');
-    setLoading(true);
-
+  /* ---------- generate output ---------- */
+  const genOutput = async () => {
+    setErr(''); setOutput(''); setLoading(true);
     try {
-      const res = await fetch('/api/generate-final', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, selections })
+      const r = await fetch('/api/generate-final', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, selections: sel })
       });
-      const data = await res.json();
-      let output = data.output || '';
-      setFinalOutput(output);
-    } catch (err: any) {
-      setError('Failed to generate final output.');
-    } finally {
-      setLoading(false);
-    }
+      const j = await r.json();
+      if (!j.output) throw new Error('Empty response');
+      setOutput(j.output);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally { setLoading(false); }
   };
 
   return (
-    <div style={{ fontFamily: 'Inter, sans-serif', maxWidth: '720px', margin: '0 auto', padding: '32px' }}>
-      {/* LOGO */}
-      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+    <div className="card">
+      {/* theme toggle */}
+      <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
+        {theme === 'dark' ? '🌞' : '🌙'}
+      </button>
+
+      {/* logo + heading */}
+      <div className="branding">
         <picture>
           <source srcSet="/logo-light.png" media="(prefers-color-scheme: dark)" />
-          <img src="/logo-dark.png" alt="Visual AI Logo" style={{ height: '64px', borderRadius: '12px' }} />
+          <img src="/logo-dark.png" className="logo" alt="logo" />
         </picture>
-        <h1 style={{ fontSize: '2rem', marginBottom: 4 }}>Visual AI Pro V5</h1>
-        <p style={{ color: '#666', fontSize: '1rem' }}>Bringing AI to Life Visually</p>
+        <h1>Visual AI Pro V5</h1>
+        <p>Bringing AI to Life Visually</p>
       </div>
 
-      {/* INPUT */}
-      <textarea
-        value={prompt}
-        onChange={handlePromptChange}
-        placeholder="Enter your prompt..."
-        style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #ccc' }}
-      />
+      {/* prompt box */}
+      <textarea value={prompt} onChange={onPrompt} placeholder="Enter your prompt…" />
       {filtered.length > 0 && (
-        <div style={{ background: '#f1f1f1', marginTop: '8px', padding: '8px', borderRadius: '8px' }}>
-          {filtered.map((s, i) => (
-            <div
-              key={i}
-              style={{ padding: '6px', cursor: 'pointer' }}
-              onClick={() => {
-                setPrompt(s);
-                setFiltered([]);
-              }}
-            >
-              {s}
-            </div>
+        <div className="suggestions">
+          {filtered.map(s => (
+            <div key={s} onClick={() => { setPrompt(s); setFiltered([]); }}>{s}</div>
           ))}
         </div>
       )}
 
-      <button
-        onClick={fetchControls}
-        disabled={loading}
-        style={{ marginTop: '16px', padding: '10px 20px', borderRadius: '8px', background: '#111', color: 'white' }}
-      >
-        {loading ? 'Thinking…' : 'Generate Sliders'}
-      </button>
+      {/* generate sliders btn */}
+      <button onClick={getControls} disabled={loading}>{loading ? 'Thinking…' : 'Generate Sliders'}</button>
 
+      {/* sliders & option buttons */}
       {controls.length > 0 && (
-        <div style={{ marginTop: '32px' }}>
-          {controls.map((ctrl, i) => (
-            <div key={ctrl.label} style={{ marginBottom: '24px' }}>
-              <label>{ctrl.label}</label>
-              {ctrl.type === 'slider' ? (
-                <div>
-                  <input
-                    type="range"
-                    min={ctrl.min}
-                    max={ctrl.max}
-                    step={ctrl.step ?? 1}
-                    value={selections[i]?.value as number}
-                    onChange={(e) =>
-                      setSelections((prev) =>
-                        prev.map((s, j) =>
-                          i === j ? { ...s, value: Number(e.target.value) } : s
-                        )
-                      )
-                    }
-                    style={{ width: '100%' }}
-                  />
-                  <div>{selections[i]?.value} {ctrl.unit ?? ''}</div>
+        <div className="controls-grid">
+          {/* sliders */}
+          {controls.map((c, i) =>
+            c.type === 'slider' ? (
+              <div className="control-row" key={c.label}>
+                <label>{c.label}</label>
+                <input
+                  type="range" min={c.min} max={c.max} step={c.step ?? 1}
+                  value={sel[i]?.value as number}
+                  onChange={e =>
+                    setSel(p => p.map((s, j) => j === i ? { ...s, value: Number(e.target.value) } : s))
+                  }
+                />
+                <span>{sel[i]?.value}{c.unit ?? ''}</span>
+              </div>
+            ) : (
+              <div className="control-row" key={c.label}>
+                <label>{c.label}</label>
+                <div className="option-buttons">
+                  {c.options.map(opt => (
+                    <button
+                      key={opt}
+                      className={sel[i]?.value === opt ? 'active' : ''}
+                      onClick={() =>
+                        setSel(p => p.map((s, j) => j === i ? { ...s, value: opt } : s))
+                      }
+                    >
+                      {opt}
+                    </button>
+                  ))}
                 </div>
-              ) : (
-                <div>
-                  {ctrl.options.map((opt) => {
-                    const isActive = selections[i]?.value === opt;
-                    return (
-                      <button
-                        key={opt}
-                        onClick={() =>
-                          setSelections((prev) =>
-                            prev.map((s, j) =>
-                              i === j ? { ...s, value: opt } : s
-                            )
-                          )
-                        }
-                        style={{
-                          margin: '6px 6px 0 0',
-                          padding: '6px 12px',
-                          borderRadius: '6px',
-                          border: '1px solid #888',
-                          background: isActive ? '#111' : '#eee',
-                          color: isActive ? 'white' : 'black'
-                        }}
-                      >
-                        {opt}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
-
-          <button
-            onClick={generateOutput}
-            disabled={loading}
-            style={{
-              marginTop: '16px',
-              padding: '10px 20px',
-              background: '#333',
-              color: 'white',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {loading ? 'Generating…' : 'Generate Final Prompt'}
+              </div>
+            )
+          )}
+          <button onClick={genOutput} disabled={loading}>
+            {loading ? 'Composing…' : 'Generate Final Prompt'}
           </button>
         </div>
       )}
 
-      {error && (
-        <div style={{ color: 'red', marginTop: '16px' }}>{error}</div>
-      )}
+      {err && <div className="error">{err}</div>}
 
-      {finalOutput && (
-        <div style={{ marginTop: '32px', background: '#f5f5f5', padding: '20px', borderRadius: '12px', whiteSpace: 'pre-line' }}>
+      {output && (
+        <div className="preview">
           <h3>Final Output</h3>
-          <p>{finalOutput}</p>
+          <ul>{toBullets(output)}</ul>
         </div>
       )}
     </div>
