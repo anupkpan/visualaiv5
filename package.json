@@ -7,6 +7,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "openai": "^4.25.0"
+    "openai": "^4.38.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "vite": "^5.2.8"
   }
 }
