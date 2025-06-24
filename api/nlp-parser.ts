@@ -1,6 +1,17 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { OpenAI } from 'openai';
 
+// Structured instruction for the model
+const SYS = `Return STRICT JSON format:
+{
+  "controls": [
+    { "label": "...", "type": "slider", "min": 0, "max": 100, "step": 1, "default": 50, "unit": "%" },
+    { "label": "...", "type": "options", "options": ["A", "B", "C"], "default": "B" }
+  ]
+}
+Only return valid JSON. No markdown, no extra text. Max 6 controls.`;
+
+// Initialize OpenAI client
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -10,44 +21,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
 
   try {
-    /* ask GPT to return at most 6 controls (sliders & option groups) */
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',              // cheaper & fast; use gpt-4 if you prefer
-      temperature: 0.3,
+    const result = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0.2,
+      response_format: { type: "json_object" },
       messages: [
-        {
-          role: 'system',
-          content: `Return STRICT JSON:
-
-{
-  "controls": [
-    { "label": "Spice Level", "type": "slider", "min": 0, "max": 10, "default": 5, "unit": "" },
-    { "label": "Style", "type": "options", "options": ["Hyderabadi","Lucknowi"], "default": 0 }
-  ]
-}
-
-Rules:
-- 3–6 controls total
-- mix of "slider" and "options"
-- No markdown, no extra keys`
-        },
+        { role: 'system', content: SYS },
         { role: 'user', content: prompt }
       ]
     });
 
-    let json = completion.choices[0].message.content!.trim();
-    json = json.replace(/```json|```/g, '');
-
-    const parsed = JSON.parse(json);
+    const parsed = JSON.parse(result.choices[0].message.content || '{}');
     return res.status(200).json(parsed);
+
   } catch (err: any) {
-    console.error('[nlp-parser] error', err?.message);
-    /* fallback default sliders */
-    return res.status(200).json({
-      controls: [
-        { label: 'Tone', type: 'slider', min: 0, max: 100, default: 50 },
-        { label: 'Length', type: 'slider', min: 0, max: 100, default: 50 }
-      ]
+    console.error('[nlp-parser] error', err.message);
+    return res.status(500).json({
+      error: 'Failed to generate controls',
+      details: err.message
     });
   }
 }
